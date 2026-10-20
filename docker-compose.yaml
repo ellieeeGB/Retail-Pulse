@@ -1,0 +1,107 @@
+services:
+  db:
+    image: postgres:16
+    container_name: retailpulse_db
+    env_file: .env
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - rp_pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d
+      - ./data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: retailpulse_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    container_name: retailpulse_api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+    volumes:
+      - ./api:/app
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: unless-stopped
+
+  celery_worker:
+    build: ./api
+    container_name: retailpulse_celery_worker
+    command: celery -A app.core.celery_app worker --loglevel=info
+    volumes:
+      - ./api:/app
+      - ./data:/app/data
+    env_file: .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+    depends_on:
+      - redis
+      - db
+    restart: unless-stopped
+
+  celery_beat:
+    build: ./api
+    container_name: retailpulse_celery_beat
+    command: celery -A app.core.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    volumes:
+      - ./api:/app
+      - ./data:/app/data
+    env_file: .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+    depends_on:
+      - redis
+      - db
+    restart: unless-stopped
+
+  ml-worker:
+    build: ./api
+    container_name: retailpulse_ml_worker
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./api/app/scripts:/app/scripts
+      - ./data:/app/data
+    command: python /app/scripts/generate_association_rules.py
+    restart: "no"
+
+  frontend:
+    build: ./frontend
+    container_name: retailpulse_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  rp_pgdata:
+  redis_data:

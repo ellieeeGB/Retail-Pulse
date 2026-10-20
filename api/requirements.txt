@@ -1,0 +1,17 @@
+fastapi[all]
+uvicorn[standard]
+sqlalchemy>=2.0
+psycopg2-binary
+python-dotenv
+pydantic[email]
+python-jose[cryptography]
+passlib[bcrypt]
+alembic
+pandas
+scikit-learn
+joblib
+xgboost
+pydantic-settings
+mlxtend
+celery
+redis
